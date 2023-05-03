@@ -12,6 +12,7 @@ from models.graphcnn import GraphCNN
 
 criterion = nn.CrossEntropyLoss()
 
+
 def train(args, model, device, train_graphs, optimizer, epoch):
     model.train()
 
@@ -27,38 +28,39 @@ def train(args, model, device, train_graphs, optimizer, epoch):
 
         labels = torch.LongTensor([graph.label for graph in batch_graph]).to(device)
 
-        #compute loss
+        # compute loss
         loss = criterion(output, labels)
 
-        #backprop
+        # backprop
         if optimizer is not None:
             optimizer.zero_grad()
-            loss.backward()         
+            loss.backward()
             optimizer.step()
-        
 
         loss = loss.detach().cpu().numpy()
         loss_accum += loss
 
-        #report
+        # report
         pbar.set_description('epoch: %d' % (epoch))
 
-    average_loss = loss_accum/total_iters
+    average_loss = loss_accum / total_iters
     print("loss training: %f" % (average_loss))
-    
+
     return average_loss
 
+
 ###pass data to model with minibatch during testing to avoid memory overflow (does not perform backpropagation)
-def pass_data_iteratively(model, graphs, minibatch_size = 64):
+def pass_data_iteratively(model, graphs, minibatch_size=64):
     model.eval()
     output = []
     idx = np.arange(len(graphs))
     for i in range(0, len(graphs), minibatch_size):
-        sampled_idx = idx[i:i+minibatch_size]
+        sampled_idx = idx[i:i + minibatch_size]
         if len(sampled_idx) == 0:
             continue
         output.append(model([graphs[j] for j in sampled_idx]).detach())
     return torch.cat(output, 0)
+
 
 def test(args, model, device, train_graphs, test_graphs, epoch):
     model.eval()
@@ -79,10 +81,12 @@ def test(args, model, device, train_graphs, test_graphs, epoch):
 
     return acc_train, acc_test
 
+
 def main():
     # Training settings
     # Note: Hyper-parameters need to be tuned in order to obtain results reported in the paper.
-    parser = argparse.ArgumentParser(description='PyTorch graph convolutional neural net for whole-graph classification')
+    parser = argparse.ArgumentParser(
+        description='PyTorch graph convolutional neural net for whole-graph classification')
     parser.add_argument('--dataset', type=str, default="MUTAG",
                         help='name of dataset (default: MUTAG)')
     parser.add_argument('--device', type=int, default=0,
@@ -112,32 +116,36 @@ def main():
     parser.add_argument('--neighbor_pooling_type', type=str, default="sum", choices=["sum", "average", "max"],
                         help='Pooling for over neighboring nodes: sum, average or max')
     parser.add_argument('--learn_eps', action="store_true",
-                                        help='Whether to learn the epsilon weighting for the center nodes. Does not affect training accuracy though.')
+                        help='Whether to learn the epsilon weighting for the center nodes. Does not affect training accuracy though.')
     parser.add_argument('--degree_as_tag', action="store_true",
-    					help='let the input node features be the degree of nodes (heuristics for unlabeled graph)')
-    parser.add_argument('--filename', type = str, default = "",
-                                        help='output file')
+                        help='let the input node features be the degree of nodes (heuristics for unlabeled graph)')
+    parser.add_argument('--filename', type=str, default="",
+                        help='output file')
     args = parser.parse_args()
 
-    #set up seeds and gpu device
+    # set up seeds and gpu device
     torch.manual_seed(0)
-    np.random.seed(0)    
+    np.random.seed(0)
     device = torch.device("cuda:" + str(args.device)) if torch.cuda.is_available() else torch.device("cpu")
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(0)
+    # 打印训练设备信息
+    print("device: ", device)
 
     graphs, num_classes = load_data(args.dataset, args.degree_as_tag)
 
     ##10-fold cross validation. Conduct an experiment on the fold specified by args.fold_idx.
     train_graphs, test_graphs = separate_data(graphs, args.seed, args.fold_idx)
 
-    model = GraphCNN(args.num_layers, args.num_mlp_layers, train_graphs[0].node_features.shape[1], args.hidden_dim, num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type, args.neighbor_pooling_type, device).to(device)
+    model = GraphCNN(args.num_layers, args.num_mlp_layers, train_graphs[0].node_features.shape[1], args.hidden_dim,
+                     num_classes, args.final_dropout, args.learn_eps, args.graph_pooling_type,
+                     args.neighbor_pooling_type, device).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
 
-
     for epoch in range(1, args.epochs + 1):
+        print("epoch:", str(epoch))
         scheduler.step()
 
         avg_loss = train(args, model, device, train_graphs, optimizer, epoch)
@@ -145,12 +153,12 @@ def main():
 
         if not args.filename == "":
             with open(args.filename, 'w') as f:
-                f.write("%f %f %f" % (avg_loss, acc_train, acc_test))
+                f.write("avg_loss = %f, acc_train = %f, acc_test = %f" % (avg_loss, acc_train, acc_test))
                 f.write("\n")
         print("")
 
         print(model.eps)
-    
+
 
 if __name__ == '__main__':
     main()
